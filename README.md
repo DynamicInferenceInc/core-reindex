@@ -1,0 +1,143 @@
+# core-reindex
+
+Docker Compose deployment for two `document_indexer` profiles:
+
+- `local-reindex` watches files from the host directory mapped in the root `.env`;
+- `smb-reindex` mirrors an SMB share into the staging directory mapped in the root `.env`.
+
+`document_indexer` is built as a reusable base image. The profile images
+inherit it and only add their own `main.py`. Qdrant and Ollama are not
+started by this Compose project.
+
+## Requirements
+
+- Docker with BuildKit;
+- Docker Compose 2.17 or newer;
+- Qdrant reachable from the Docker host on port 6333;
+- Ollama reachable from the Docker host on port 11434;
+- the `nomic-embed-text` model installed in Ollama.
+
+```bash
+docker compose version
+ollama pull nomic-embed-text
+```
+
+On Linux, Compose maps `host.docker.internal` to the Docker host gateway.
+Qdrant and Ollama must accept connections from the Docker bridge, not only
+from `127.0.0.1`. For Ollama this can be `OLLAMA_HOST=0.0.0.0:11434`.
+
+If image descriptions are enabled later, also install the configured VLM,
+which is `qwen3-vl:8b` by default.
+
+## Configuration
+
+There are three env files. Compose interpolates the root file; each
+container gets only its own profile file.
+
+```bash
+cp .env.example .env
+cp local-reindex/.env.example local-reindex/.env
+cp smb-reindex/.env.example smb-reindex/.env
+```
+
+Root `.env` is for volume mounts only. It is not injected into containers:
+
+```dotenv
+LOCAL_DOCS_HOST=./local-reindex/docs
+LOCAL_DOCS_CONTAINER=/data/docs
+SMB_STAGING_HOST=./smb-reindex/staging
+SMB_STAGING_CONTAINER=/data/staging
+```
+
+`local-reindex/.env` is the full environment of the local indexer
+(`WATCH_PATH`, `QDRANT_URL`, collection, models). `WATCH_PATH` must equal
+`LOCAL_DOCS_CONTAINER`.
+
+`smb-reindex/.env` is the full environment of the SMB indexer, including
+share credentials. `SMB_STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
+Fill `SMB_SERVER`, `SMB_SHARE`, `SMB_USERNAME`, `SMB_PASSWORD`,
+`SMB_DOMAIN` and `SMB_SUBPATH` before starting that service.
+
+Runtime `.env` files are ignored by git.
+
+## Run
+
+Start the local profile:
+
+```bash
+docker compose up -d --build local-reindex
+docker compose logs -f local-reindex
+```
+
+Place documents in the host path from `LOCAL_DOCS_HOST` (by default
+`local-reindex/docs/`). The bind mount is live; no rebuild is needed.
+
+Start the SMB profile:
+
+```bash
+docker compose up -d --build smb-reindex
+docker compose logs -f smb-reindex
+```
+
+Start both:
+
+```bash
+docker compose up -d --build local-reindex smb-reindex
+docker compose logs -f local-reindex smb-reindex
+```
+
+`docker compose up -d --build` without service names starts only
+`local-reindex`. The SMB service is behind the `smb` profile so it does
+not start with placeholder credentials. The `document-indexer` service
+has `deploy.replicas: 0`: it stays in the build graph and never runs.
+
+The SMB container does not establish a VPN. Host VPN, DNS and the route
+to TCP/445 must work from the Docker bridge.
+
+Stop:
+
+```bash
+docker compose down
+```
+
+## How the indexer reads settings
+
+`main.py` does not pass any config of its own:
+
+```python
+from document_indexer import IndexerSettings, run
+
+if __name__ == "__main__":
+    run(IndexerSettings())
+```
+
+`IndexerSettings` is a pydantic-settings object. It reads process
+environment variables (`WATCH_PATH`, `QDRANT_URL`, `SMB_PASSWORD`, …)
+and, if present, a `.env` file in the current working directory.
+
+Docker Compose `env_file` loads `local-reindex/.env` or `smb-reindex/.env`
+into the container environment before `python main.py` starts. The image
+does not copy `.env` files, so the process environment is the source of
+truth.
+
+`SOURCE_TYPE` in that file selects local watchdog vs SMB polling.
+
+## Build graph
+
+```text
+document_indexer/Dockerfile
+          |
+          v
+ document-indexer:latest
+      /             \
+     v               v
+local-reindex     smb-reindex
+```
+
+No base container is created.
+
+## Git submodules
+
+Commit and push each submodule first, then record the new SHAs in
+`core-reindex`. Do not push submodule contents through the parent
+repository.

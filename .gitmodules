@@ -1,0 +1,9 @@
+[submodule "document_indexer"]
+	path = document_indexer
+	url = git@github.com:DynamicInferenceInc/document_indexer.git
+[submodule "local-reindex"]
+	path = local-reindex
+	url = git@github.com:DynamicInferenceInc/local-reindex.git
+[submodule "smb-reindex"]
+	path = smb-reindex
+	url = git@github.com:DynamicInferenceInc/smb-reindex.git

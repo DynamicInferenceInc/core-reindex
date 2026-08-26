@@ -1,0 +1,39 @@
+services:
+  document-indexer:
+    image: document-indexer:latest
+    build:
+      context: ./document_indexer
+    deploy:
+      replicas: 0
+
+  local-reindex:
+    image: local-reindex:latest
+    build:
+      context: ./local-reindex
+      additional_contexts:
+        document-indexer: service:document-indexer
+    env_file:
+      - path: ./local-reindex/.env
+        required: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${LOCAL_DOCS_HOST}:${LOCAL_DOCS_CONTAINER}
+    restart: unless-stopped
+
+  smb-reindex:
+    image: smb-reindex:latest
+    build:
+      context: ./smb-reindex
+      additional_contexts:
+        document-indexer: service:document-indexer
+    env_file:
+      - path: ./smb-reindex/.env
+        required: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${SMB_STAGING_HOST}:${SMB_STAGING_CONTAINER}
+    restart: unless-stopped
+    profiles:
+      - smb
