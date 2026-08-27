@@ -141,6 +141,10 @@ local-reindex     smb-reindex
 
 No base container is created.
 
+The first `--build` after a Dockerfile change still installs torch/docling.
+Later code-only rebuilds should show `CACHED` on those steps. Do not pass
+`--no-cache`. Compose sets `provenance: false` so export is not doubled.
+
 ## Git submodules
 
 Commit and push each submodule first, then record the new SHAs in
