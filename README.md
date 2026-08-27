@@ -15,11 +15,12 @@ started by this Compose project.
 - Docker Compose 2.17 or newer;
 - Qdrant reachable from the Docker host on port 6333;
 - Ollama reachable from the Docker host on port 11434;
-- the `nomic-embed-text` model installed in Ollama.
+- the `nomic-embed-text` embedding model and `qwen3:8b` extraction LLM in Ollama.
 
 ```bash
 docker compose version
 ollama pull nomic-embed-text
+ollama pull qwen3:8b
 ```
 
 On Linux, Compose maps `host.docker.internal` to the Docker host gateway.
@@ -50,13 +51,14 @@ SMB_STAGING_CONTAINER=/data/staging
 ```
 
 `local-reindex/.env` is the full environment of the local indexer
-(`WATCH_PATH`, `QDRANT_URL`, collection, models). `WATCH_PATH` must equal
-`LOCAL_DOCS_CONTAINER`.
+(`SOURCE__WATCH_PATH`, `QDRANT__URL`, collection, models).
+`SOURCE__WATCH_PATH` must equal `LOCAL_DOCS_CONTAINER`.
 
 `smb-reindex/.env` is the full environment of the SMB indexer, including
-share credentials. `SMB_STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
-Fill `SMB_SERVER`, `SMB_SHARE`, `SMB_USERNAME`, `SMB_PASSWORD`,
-`SMB_DOMAIN` and `SMB_SUBPATH` before starting that service.
+share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
+Fill `SOURCE__SERVER`, `SOURCE__SHARE`, `SOURCE__USERNAME`, `SOURCE__PASSWORD`,
+`SOURCE__DOMAIN` and `SOURCE__SUBPATH` before starting that service.
+Resume-поля (`project_experiences`) подключаются в `smb-reindex/main.py`.
 
 Runtime `.env` files are ignored by git.
 
@@ -75,14 +77,14 @@ Place documents in the host path from `LOCAL_DOCS_HOST` (by default
 Start the SMB profile:
 
 ```bash
-docker compose up -d --build smb-reindex
+docker compose --profile smb up -d --build smb-reindex
 docker compose logs -f smb-reindex
 ```
 
 Start both:
 
 ```bash
-docker compose up -d --build local-reindex smb-reindex
+docker compose --profile smb up -d --build local-reindex smb-reindex
 docker compose logs -f local-reindex smb-reindex
 ```
 
@@ -102,7 +104,7 @@ docker compose down
 
 ## How the indexer reads settings
 
-`main.py` does not pass any config of its own:
+`local-reindex/main.py` только читает env:
 
 ```python
 from document_indexer import IndexerSettings, run
@@ -111,8 +113,11 @@ if __name__ == "__main__":
     run(IndexerSettings())
 ```
 
-`IndexerSettings` is a pydantic-settings object. It reads process
-environment variables (`WATCH_PATH`, `QDRANT_URL`, `SMB_PASSWORD`, …)
+Resume-схема и LLM-поля подключаются в `smb-reindex/main.py` через
+`ProfileSmb`, `ResumePayloadBuilder` и `JsonSchemaEnricher`.
+
+`IndexerSettings` reads process environment
+(`SOURCE__WATCH_PATH`, `QDRANT__URL`, `MODELS__EMBEDDING_MODEL`, …)
 and, if present, a `.env` file in the current working directory.
 
 Docker Compose `env_file` loads `local-reindex/.env` or `smb-reindex/.env`
@@ -120,7 +125,7 @@ into the container environment before `python main.py` starts. The image
 does not copy `.env` files, so the process environment is the source of
 truth.
 
-`SOURCE_TYPE` in that file selects local watchdog vs SMB polling.
+`SOURCE__KIND` selects local watchdog vs SMB polling.
 
 ## Build graph
 
