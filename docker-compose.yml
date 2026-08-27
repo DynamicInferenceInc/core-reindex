@@ -21,6 +21,21 @@ services:
       - ${LOCAL_DOCS_HOST}:${LOCAL_DOCS_CONTAINER}
     restart: unless-stopped
 
+  local-cv:
+    image: local-reindex:latest
+    build:
+      context: ./local-reindex
+      additional_contexts:
+        document-indexer: service:document-indexer
+    env_file:
+      - path: ./local-reindex/.env.cv
+        required: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${LOCAL_CV_HOST}:${LOCAL_CV_CONTAINER}
+    restart: unless-stopped
+
   smb-reindex:
     image: smb-reindex:latest
     build:

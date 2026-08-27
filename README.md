@@ -1,8 +1,9 @@
 # core-reindex
 
-Docker Compose deployment for two `document_indexer` profiles:
+Docker Compose deployment for `document_indexer` profiles:
 
-- `local-reindex` watches files from the host directory mapped in the root `.env`;
+- `local-reindex` watches a local folder with the default Qdrant payload;
+- `local-cv` is the same image with `INDEXER_PROFILE=resume` and collection `docs-cv`;
 - `smb-reindex` mirrors an SMB share into the staging directory mapped in the root `.env`.
 
 `document_indexer` is built as a reusable base image. The profile images
@@ -38,6 +39,7 @@ container gets only its own profile file.
 ```bash
 cp .env.example .env
 cp local-reindex/.env.example local-reindex/.env
+cp local-reindex/.env.cv.example local-reindex/.env.cv
 cp smb-reindex/.env.example smb-reindex/.env
 ```
 
@@ -46,13 +48,17 @@ Root `.env` is for volume mounts only. It is not injected into containers:
 ```dotenv
 LOCAL_DOCS_HOST=./local-reindex/docs
 LOCAL_DOCS_CONTAINER=/data/docs
+LOCAL_CV_HOST=./local-reindex/cv
+LOCAL_CV_CONTAINER=/data/cv
 SMB_STAGING_HOST=./smb-reindex/staging
 SMB_STAGING_CONTAINER=/data/staging
 ```
 
-`local-reindex/.env` is the full environment of the local indexer
-(`SOURCE__WATCH_PATH`, `QDRANT__URL`, collection, models).
+`local-reindex/.env` is the default local indexer (`docs-local`).
 `SOURCE__WATCH_PATH` must equal `LOCAL_DOCS_CONTAINER`.
+
+`local-reindex/.env.cv` is the resume local indexer (`docs-cv`,
+`INDEXER_PROFILE=resume`). `SOURCE__WATCH_PATH` must equal `LOCAL_CV_CONTAINER`.
 
 `smb-reindex/.env` is the full environment of the SMB indexer, including
 share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
@@ -64,15 +70,15 @@ Runtime `.env` files are ignored by git.
 
 ## Run
 
-Start the local profile:
+Start the default local profile and the resume local profile:
 
 ```bash
-docker compose up -d --build local-reindex
-docker compose logs -f local-reindex
+docker compose up -d --build local-reindex local-cv
+docker compose logs -f local-reindex local-cv
 ```
 
-Place documents in the host path from `LOCAL_DOCS_HOST` (by default
-`local-reindex/docs/`). The bind mount is live; no rebuild is needed.
+Place ordinary documents in `LOCAL_DOCS_HOST` and CVs in `LOCAL_CV_HOST`.
+Bind mounts are live; no rebuild is needed for new files.
 
 Start the SMB profile:
 
@@ -88,8 +94,8 @@ docker compose --profile smb up -d --build local-reindex smb-reindex
 docker compose logs -f local-reindex smb-reindex
 ```
 
-`docker compose up -d --build` without service names starts only
-`local-reindex`. The SMB service is behind the `smb` profile so it does
+`docker compose up -d --build` without service names starts `local-reindex`
+and `local-cv`. The SMB service is behind the `smb` profile so it does
 not start with placeholder credentials. The `document-indexer` service
 has `deploy.replicas: 0`: it stays in the build graph and never runs.
 
@@ -104,17 +110,11 @@ docker compose down
 
 ## How the indexer reads settings
 
-`local-reindex/main.py` только читает env:
+`local-reindex/main.py` читает `INDEXER_PROFILE`. По умолчанию это
+`run(IndexerSettings())`. При `INDEXER_PROFILE=resume` подключаются
+`ResumePayloadBuilder` и `JsonSchemaEnricher` (сервис `local-cv`).
 
-```python
-from document_indexer import IndexerSettings, run
-
-if __name__ == "__main__":
-    run(IndexerSettings())
-```
-
-Resume-схема и LLM-поля подключаются в `smb-reindex/main.py` через
-`ProfileSmb`, `ResumePayloadBuilder` и `JsonSchemaEnricher`.
+Resume на шаре по-прежнему в `smb-reindex/main.py` через `ProfileSmb`.
 
 `IndexerSettings` reads process environment
 (`SOURCE__WATCH_PATH`, `QDRANT__URL`, `MODELS__EMBEDDING_MODEL`, …)
