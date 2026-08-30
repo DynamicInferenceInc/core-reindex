@@ -64,7 +64,7 @@ SMB_STAGING_CONTAINER=/data/staging
 share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
 Fill `SOURCE__SERVER`, `SOURCE__SHARE`, `SOURCE__USERNAME`, `SOURCE__PASSWORD`,
 `SOURCE__DOMAIN` and `SOURCE__SUBPATH` before starting that service.
-Resume-поля (`project_experiences`) подключаются в `smb-reindex/main.py`.
+Resume-поля (ФИО, должность, проект, `functional_direction`) подключаются в `smb-reindex/main.py`.
 
 Runtime `.env` files are ignored by git.
 
@@ -112,7 +112,7 @@ docker compose down
 
 `local-reindex/main.py` читает `INDEXER_PROFILE`. По умолчанию это
 `run(IndexerSettings())`. При `INDEXER_PROFILE=resume` подключаются
-`ResumePayloadBuilder` и `JsonSchemaEnricher` (сервис `local-cv`).
+`ResumePayloadBuilder`, `ResumeProjectChunker` и `FunctionalDirectionEnricher` (сервис `local-cv`).
 
 Resume на шаре по-прежнему в `smb-reindex/main.py` через `ProfileSmb`.
 
