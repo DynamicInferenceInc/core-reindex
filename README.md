@@ -64,7 +64,7 @@ SMB_STAGING_CONTAINER=/data/staging
 share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
 Fill `SOURCE__SERVER`, `SOURCE__SHARE`, `SOURCE__USERNAME`, `SOURCE__PASSWORD`,
 `SOURCE__DOMAIN` and `SOURCE__SUBPATH` before starting that service.
-Resume-поля (ФИО, должность, проект, `functional_direction`) подключаются в `smb-reindex/main.py`.
+Resume-поля (ФИО, должность, проект, `functional_direction`, `solution_platform`) подключаются в `smb-reindex/main.py`.
 
 Runtime `.env` files are ignored by git.
 
