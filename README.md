@@ -2,8 +2,8 @@
 
 Docker Compose deployment for `document_indexer` profiles:
 
-- `local-reindex` watches a local folder with the default Qdrant payload;
-- `local-cv` is the same image with `INDEXER_PROFILE=resume` and collection `docs-cv`;
+- `local-reindex` watches a local folder with `CHUNKING__STRATEGY=table_aware`;
+- `local-cv` is the same image with `CHUNKING__STRATEGY=resume_project` and collection `docs-cv`;
 - `smb-reindex` mirrors an SMB share into the staging directory mapped in the root `.env`.
 
 `document_indexer` is built as a reusable base image. The profile images
@@ -58,13 +58,14 @@ SMB_STAGING_CONTAINER=/data/staging
 `SOURCE__WATCH_PATH` must equal `LOCAL_DOCS_CONTAINER`.
 
 `local-reindex/.env.cv` is the resume local indexer (`docs-cv`,
-`INDEXER_PROFILE=resume`). `SOURCE__WATCH_PATH` must equal `LOCAL_CV_CONTAINER`.
+`CHUNKING__STRATEGY=resume_project`). `SOURCE__WATCH_PATH` must equal `LOCAL_CV_CONTAINER`.
 
 `smb-reindex/.env` is the full environment of the SMB indexer, including
 share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
 Fill `SOURCE__SERVER`, `SOURCE__SHARE`, `SOURCE__USERNAME`, `SOURCE__PASSWORD`,
 `SOURCE__DOMAIN` and `SOURCE__SUBPATH` before starting that service.
-Resume-поля (ФИО, должность, проект, `functional_direction`, `solution_platform`) подключаются в `smb-reindex/main.py`.
+Resume-поля (ФИО, должность, проект, `functional_direction`, `solution_platform`)
+включаются через `CHUNKING__STRATEGY=resume_project`.
 
 Runtime `.env` files are ignored by git.
 
@@ -110,11 +111,10 @@ docker compose down
 
 ## How the indexer reads settings
 
-`local-reindex/main.py` читает `INDEXER_PROFILE`. По умолчанию это
-`run(IndexerSettings())`. При `INDEXER_PROFILE=resume` подключаются
-`ResumePayloadBuilder`, `ResumeProjectChunker` и `FunctionalDirectionEnricher` (сервис `local-cv`).
-
-Resume на шаре по-прежнему в `smb-reindex/main.py` через `ProfileSmb`.
+`local-reindex/main.py` и `smb-reindex/main.py` вызывают `run()`.
+Стратегию задаёт `CHUNKING__STRATEGY`: `table_aware` или `resume_project`.
+При `resume_project` библиотека сама подключает resume-чанкер, payload и
+`FunctionalDirectionEnricher` (сервис `local-cv` и `smb-reindex`).
 
 `IndexerSettings` reads process environment
 (`SOURCE__WATCH_PATH`, `QDRANT__URL`, `MODELS__EMBEDDING_MODEL`, …)
