@@ -16,13 +16,21 @@ started by this Compose project.
 - Docker Compose 2.17 or newer;
 - Qdrant reachable from the Docker host on port 6333;
 - Ollama reachable from the Docker host on port 11434;
-- the `nomic-embed-text` embedding model and `qwen3:8b` extraction LLM in Ollama.
+- the `nomic-embed-text` embedding model and the `qwen3.8:27b` extraction LLM in Ollama
+  (resume profiles only).
 
 ```bash
 docker compose version
 ollama pull nomic-embed-text
-ollama pull qwen3:8b
+ollama pull qwen3.8:27b-q8_0   # or qwen3.8:27b if the q8_0 tag is unavailable
 ```
+
+Target host for the resume profiles is an NVIDIA DGX Spark (GB10, 128 GB unified
+memory, ARM64). Build the images on the Spark itself (`docker compose build`);
+the base image is multi-arch and torch CPU wheels are resolved for `aarch64`.
+Recommended Ollama environment there: `OLLAMA_FLASH_ATTENTION=1`,
+`OLLAMA_KEEP_ALIVE=-1`, `OLLAMA_NUM_PARALLEL=1`. The indexer does not use the
+GPU; it belongs to Ollama.
 
 On Linux, Compose maps `host.docker.internal` to the Docker host gateway.
 Qdrant and Ollama must accept connections from the Docker bridge, not only
@@ -64,8 +72,12 @@ SMB_STAGING_CONTAINER=/data/staging
 share credentials. `SOURCE__STAGING_PATH` must equal `SMB_STAGING_CONTAINER`.
 Fill `SOURCE__SERVER`, `SOURCE__SHARE`, `SOURCE__USERNAME`, `SOURCE__PASSWORD`,
 `SOURCE__DOMAIN` and `SOURCE__SUBPATH` before starting that service.
-Resume-поля (ФИО, должность, проект, `functional_direction`, `solution_platform`)
-включаются через `CHUNKING__STRATEGY=resume_project`.
+Resume-поля (ФИО, должность, проект, `functional_direction`, `solution_platform`,
+`extraction_source`) включаются через `CHUNKING__STRATEGY=resume_project`.
+Параметры LLM в `.env.cv.example` / `smb-reindex/.env.example` подобраны под Spark:
+`MODELS__EXTRACTION_MODEL=qwen3.8:27b-q8_0`, `MODELS__EXTRACTION_NUM_CTX=65536`,
+`MODELS__EXTRACTION_NUM_PREDICT=8192`, `MODELS__EXTRACTION_TIMEOUT_SEC=1800`,
+блок `RESUME__*`, `QDRANT__INDEX_VERSION=resume-v20`.
 
 Runtime `.env` files are ignored by git.
 
@@ -113,8 +125,29 @@ docker compose down
 
 `local-reindex/main.py` и `smb-reindex/main.py` вызывают `run()`.
 Стратегию задаёт `CHUNKING__STRATEGY`: `table_aware` или `resume_project`.
-При `resume_project` библиотека сама подключает resume-чанкер, payload и
-`FunctionalDirectionEnricher` (сервис `local-cv` и `smb-reindex`).
+При `resume_project` библиотека сама подключает resume-чанкер с LLM-шагами
+и resume-payload (сервисы `local-cv` и `smb-reindex`).
+
+## Resume pipeline and report
+
+For every CV (`resume_project`):
+
+1. parser — projects from Docling tables / labeled blocks (template CVs);
+2. LLM-1 — projects from the text the parser did not understand (when there are
+   no parsed projects, or a large leftover with work-history hints);
+3. LLM-2 — one call per CV: fill empty fields, set `functional_direction` and
+   `solution_platform`; parser values are never overwritten;
+4. LLM-3 — when there are no projects at all: `experience` chunks (one per job,
+   same six fields) plus one `profile` chunk;
+5. `prose` windows with `needs_review=true` only when the LLM is disabled or failed.
+
+Every LLM value is checked against the CV text and dropped if it is not there.
+
+Audits without embeddings / Qdrant: `RESUME_PARSE_ONLY=1` (parser) or
+`RESUME_LLM_AUDIT=1` (parser + LLM, also writes `resume_chunks.jsonl`). After each
+audit and each full reindex the indexer prints and saves `resume_report.txt/.csv`
+(`ФИО | Должность | Проектов | из них LLM | Мест работы | Проверить | Файл`, totals,
+files without ФИО/должность) next to the watch/staging directory.
 
 `IndexerSettings` reads process environment
 (`SOURCE__WATCH_PATH`, `QDRANT__URL`, `MODELS__EMBEDDING_MODEL`, …)
